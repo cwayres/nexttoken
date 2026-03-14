@@ -1,0 +1,1204 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Next Token Explorer — Autoregressive Token Prediction Visualizer</title>
+    <style>
+      :root {
+        --bg: #f6f8fb;
+        --card: #fff;
+        --border: #dde6f2;
+        --text: #1e293b;
+        --muted: #64748b;
+        --brand: #2563eb;
+      }
+      body { margin: 0; font-family: Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); }
+      .container { max-width: 1050px; margin: 24px auto; padding: 0 16px; }
+      .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+      h1, h2, h3 { margin-top: 0; }
+      .muted { color: var(--muted); }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      textarea, select, input[type='range'], input[type='text'], input[type='number'] { width: 100%; box-sizing: border-box; }
+      textarea { min-height: 96px; max-height: none; padding: 10px; resize: vertical; overflow-y: auto; }
+      select, button { padding: 8px; }
+      input[type='text'], input[type='number'] { padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
+      button { border: none; border-radius: 8px; color: white; background: var(--brand); cursor: pointer; }
+      .btn-secondary { background: #475569; }
+      .btn-success { background: #16a34a; }
+      .hidden { display: none !important; }
+
+      .response-prompt { color:#64748b;font-size:14px;line-height:1.4;margin:0;padding:2px 0; }
+      .response-tokens { font-size:14px;line-height:1.4;padding:2px 0;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:break-word; }
+      .token {
+        display: inline;
+        border-radius: 4px;
+        transition: background-color 0.15s;
+        cursor: pointer;
+      }
+      .token:hover { outline: 1px solid #1d4ed8; }
+
+      .tooltip {
+        position: fixed;
+        pointer-events: none;
+        z-index: 1000;
+        background: #0f172a;
+        color: #e2e8f0;
+        border: 1px solid #334155;
+        border-radius: 8px;
+        padding: 8px;
+        font-size: 12px;
+        max-width: 320px;
+        white-space: normal;
+      }
+      .tooltip table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+      .tooltip th, .tooltip td { border-bottom: 1px solid #334155; padding: 3px; text-align: left; font-size: 11px; }
+
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border-bottom: 1px solid var(--border); padding: 8px; text-align: left; }
+      .bar-track { background: #e2e8f0; border-radius: 999px; height: 10px; overflow: hidden; }
+      .bar-fill { height: 100%; background: linear-gradient(90deg, #2563eb, #0ea5e9); }
+
+      .provider-section { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #fafbfd; overflow: visible; }
+      .provider-tabs { display: flex; gap: 0; margin-bottom: 12px; }
+      .provider-tab {
+        padding: 8px 18px; cursor: pointer; border: 1px solid var(--border);
+        background: var(--card); font-size: 14px; color: var(--muted);
+      }
+      .provider-tab:first-child { border-radius: 8px 0 0 8px; }
+      .provider-tab:last-child { border-radius: 0 8px 8px 0; }
+      .provider-tab.active { background: var(--brand); color: white; border-color: var(--brand); }
+      .provider-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .provider-fields > div { display: flex; flex-direction: column; gap: 4px; }
+      .provider-fields label { font-size: 13px; color: var(--muted); }
+      .hint { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+      .model-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        z-index: 1500;
+        max-height: 220px;
+        overflow-y: auto;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-top: none;
+        border-radius: 0 0 6px 6px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      }
+      .model-dropdown .model-option {
+        padding: 7px 10px;
+        font-size: 13px;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+      }
+      .model-dropdown .model-option:hover,
+      .model-dropdown .model-option.highlighted {
+        background: #e0ecff;
+      }
+      .model-dropdown .model-no-results {
+        padding: 7px 10px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .model-meta {
+        font-size: 11px;
+        color: var(--muted);
+        white-space: nowrap;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .badge-supported {
+        font-size: 10px;
+        background: #16a34a;
+        color: white;
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      .badge-unsupported {
+        font-size: 10px;
+        background: #dc2626;
+        color: white;
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      .badge-unknown {
+        font-size: 10px;
+        background: #94a3b8;
+        color: white;
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+
+      /* Request/Response overlay */
+      .overlay-backdrop {
+        position: fixed; inset: 0; z-index: 2000;
+        background: rgba(15,23,42,0.6);
+        display: flex; align-items: center; justify-content: center;
+      }
+      .overlay-panel {
+        background: #0f172a; color: #e2e8f0;
+        border-radius: 12px; width: 90vw; max-width: 800px;
+        max-height: 85vh; display: flex; flex-direction: column;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      }
+      .overlay-header {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 12px 16px; border-bottom: 1px solid #334155;
+      }
+      .overlay-header h3 { margin: 0; font-size: 15px; }
+      .overlay-close {
+        background: none; border: none; color: #94a3b8; font-size: 22px;
+        cursor: pointer; padding: 0 4px; line-height: 1;
+      }
+      .overlay-close:hover { color: #fff; }
+      .overlay-tabs {
+        display: flex; border-bottom: 1px solid #334155;
+      }
+      .overlay-tab {
+        padding: 8px 20px; cursor: pointer; font-size: 13px;
+        color: #94a3b8; border-bottom: 2px solid transparent;
+        background: none; border-top: none; border-left: none; border-right: none;
+      }
+      .overlay-tab.active { color: #7eb8da; border-bottom-color: #7eb8da; }
+      .overlay-body {
+        flex: 1; overflow-y: auto; padding: 0;
+      }
+      .overlay-body pre {
+        margin: 0; padding: 16px; font-size: 12px; line-height: 1.5;
+        white-space: pre-wrap; word-break: break-word;
+      }
+      .overlay-footer {
+        padding: 8px 16px; border-top: 1px solid #334155;
+        display: flex; justify-content: flex-end; gap: 8px;
+      }
+      .overlay-footer button { font-size: 12px; padding: 5px 12px; }
+      .overlay-body table { color: #e2e8f0; }
+      .overlay-body th, .overlay-body td { border-bottom-color: #334155; }
+      .overlay-body .bar-track { background: #334155; }
+      .overlay-body .muted { color: #94a3b8; }
+      .info-wrap { position: relative; display: inline; }
+      .info-icon { cursor: help; font-size: 13px; color: #94a3b8; margin-left: 3px; }
+      .info-tip {
+        display: none; position: absolute; bottom: 120%; left: 50%; transform: translateX(-50%);
+        background: #1e293b; color: #e2e8f0; border: 1px solid #475569;
+        border-radius: 6px; padding: 8px 10px; font-size: 11px; font-weight: 400;
+        width: 280px; line-height: 1.5; white-space: normal; z-index: 3000;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3); text-transform: none; letter-spacing: normal;
+      }
+      .info-tip a { color: #7eb8da; }
+      .info-wrap:hover .info-tip { display: block; }
+      /* Prevent tips near right edge from going offscreen */
+      .info-tip.tip-left { left: auto; right: 0; transform: none; }
+      .info-tip.tip-right { left: 0; transform: none; }
+
+      /* Collapsible sections */
+      .collapsible-header {
+        display: flex; justify-content: space-between; align-items: center;
+        cursor: pointer; user-select: none;
+      }
+      .collapsible-header h2 { margin: 0; }
+      .collapse-toggle {
+        background: none; border: none; color: var(--muted); font-size: 18px;
+        cursor: pointer; padding: 0 4px; line-height: 1; transition: transform 0.2s;
+      }
+      .collapsible-body {
+        transition: max-height 0.3s ease, opacity 0.2s ease;
+        max-height: 2000px; opacity: 1;
+      }
+      .collapsible-body.collapsed {
+        max-height: 0; opacity: 0; margin: 0; padding: 0; overflow: hidden;
+      }
+      .collapse-toggle.collapsed { transform: rotate(-90deg); }
+
+      /* Prompt context toggle under response */
+      .prompt-context-toggle {
+        cursor: pointer; font-size: 11px; color: var(--muted);
+        display: flex; align-items: center; gap: 4px; margin-top: 6px;
+        user-select: none;
+      }
+      .prompt-context-toggle:hover { color: var(--text); }
+      .prompt-context-arrow { transition: transform 0.2s; display: inline-block; font-size: 10px; }
+      .prompt-context-arrow.collapsed { transform: rotate(-90deg); }
+
+      @media (max-width: 800px) {
+        .grid { grid-template-columns: 1fr; }
+        .provider-fields { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Next Token Explorer</h1>
+      <p class="muted" style="margin-top:-0.5em; margin-bottom:1.2em;">An <a href="https://en.wikipedia.org/wiki/Autoregressive_model" target="_blank" style="color:#7eb8da;">autoregressive</a> token prediction visualizer — inspect the <a href="https://en.wikipedia.org/wiki/Log_probability" target="_blank" style="color:#7eb8da;">log-probability</a> distributions a transformer produces at each decoding step.</p>
+
+      <div class="card">
+        <div class="collapsible-header" onclick="toggleCollapse('howItWorks')">
+          <h2>How Autoregressive Decoding Works</h2>
+          <span class="collapse-toggle collapsed" id="howItWorksToggle">&#9660;</span>
+        </div>
+        <div class="collapsible-body collapsed" id="howItWorksBody">
+          <p class="muted" style="margin-top:8px;">Large language models are <a href="https://en.wikipedia.org/wiki/Autoregressive_model" target="_blank" style="color:#7eb8da;">autoregressive</a>: they generate text one <a href="https://en.wikipedia.org/wiki/Lexical_analysis#Tokenization" target="_blank" style="color:#7eb8da;">token</a> at a time. At each step the model's <a href="https://en.wikipedia.org/wiki/Transformer_(deep_learning_architecture)" target="_blank" style="color:#7eb8da;">transformer</a> layers produce a <a href="https://en.wikipedia.org/wiki/Logit" target="_blank" style="color:#7eb8da;">logit</a> vector over its entire vocabulary. A <a href="https://en.wikipedia.org/wiki/Softmax_function" target="_blank" style="color:#7eb8da;">softmax</a> converts these logits into a probability distribution, and a <a href="https://en.wikipedia.org/wiki/Sampling_(statistics)" target="_blank" style="color:#7eb8da;">sampling</a> strategy (controlled by <a href="https://en.wikipedia.org/wiki/Softmax_function#Reinforcement_learning" target="_blank" style="color:#7eb8da;">temperature</a>) selects the next token. That token is appended to the context and the process repeats — this is the <strong>autoregressive loop</strong>. Hover over any token below to see the top candidates and their log-probabilities at that decoding step.</p>
+        </div>
+      </div>
+
+      <!-- Provider settings — z-index so model dropdown floats above cards below -->
+      <div class="card" style="position:relative;z-index:10;">
+        <div class="collapsible-header" onclick="toggleCollapse('provider')">
+          <h2>Provider <span class="muted" style="font-size:13px;font-weight:400;" id="providerSummary"></span></h2>
+          <span class="collapse-toggle" id="providerToggle">&#9660;</span>
+        </div>
+        <div class="collapsible-body" id="providerBody">
+        <div class="provider-tabs" style="margin-top:8px;">
+          <div class="provider-tab active" data-provider="lmstudio">LM Studio</div>
+          <div class="provider-tab" data-provider="ollama">Ollama</div>
+          <div class="provider-tab" data-provider="openai">OpenAI</div>
+        </div>
+
+        <div class="provider-section">
+          <div class="provider-fields">
+            <div>
+              <label for="baseUrl">Server URL</label>
+              <input type="text" id="baseUrl" value="http://localhost:1234/v1" />
+              <div class="hint" id="baseUrlHint">Default LM Studio endpoint</div>
+            </div>
+            <div>
+              <label for="apiKey">API Key</label>
+              <input type="password" id="apiKey" placeholder="not needed for local" />
+              <div class="hint" id="apiKeyHint">Not required for local servers</div>
+            </div>
+          </div>
+          <div style="margin-top:10px;">
+            <label for="model" style="font-size:13px;color:var(--muted);">Model</label>
+            <div style="display:flex;gap:6px;align-items:center;margin-top:4px;">
+              <div style="position:relative;flex:1;min-width:0;" id="modelDropdownWrap">
+                <input type="text" id="model" value="" placeholder="loaded model name" autocomplete="off" />
+                <div id="modelDropdown" class="model-dropdown hidden"></div>
+              </div>
+              <button type="button" id="refreshModelsBtn" title="Fetch available models" style="padding:6px 12px;font-size:13px;white-space:nowrap;flex-shrink:0;">Refresh Models</button>
+              <button type="button" id="unloadModelBtn" title="Unload current model from memory" style="padding:6px 12px;font-size:13px;white-space:nowrap;flex-shrink:0;background:#dc2626;">Unload</button>
+            </div>
+            <div class="hint" id="modelHint">Leave blank to use whatever is loaded in LM Studio</div>
+          </div>
+        </div>
+        </div><!-- end providerBody -->
+      </div>
+
+      <!-- Sampling controls — collapsible -->
+      <div class="card">
+        <div class="collapsible-header" onclick="toggleCollapse('controls')">
+          <h2>Sampling Controls</h2>
+          <span class="collapse-toggle" id="controlsToggle">&#9660;</span>
+        </div>
+        <div class="collapsible-body" id="controlsBody">
+        <div class="grid" style="margin-top:8px;">
+          <div>
+            <label for="topLogprobs">Top alternatives <span class="info-wrap"><span class="info-icon">&#9432;</span><span class="info-tip tip-right">How many alternative tokens to show at each position. The model always scores its entire vocabulary (~32K–128K tokens), but we display only the top N. More alternatives = more insight into the model's uncertainty.<br><br><a href="https://platform.openai.com/docs/api-reference/chat/create#chat-create-top_logprobs" target="_blank">OpenAI docs: top_logprobs</a></span></span></label>
+            <select id="topLogprobs"><option>3</option><option selected>5</option><option>10</option></select>
+          </div>
+          <div>
+            <label for="temperature">Temperature: <span id="temperatureValue">0</span> <span class="info-wrap"><span class="info-icon">&#9432;</span><span class="info-tip">Controls randomness in token selection. At 0, the model always picks the most likely token (greedy/deterministic). Higher values flatten the probability distribution, giving less-likely tokens a better chance. Typical range: 0–1 for focused output, 1–2 for creative/varied output.<br><br><a href="https://en.wikipedia.org/wiki/Softmax_function#Reinforcement_learning" target="_blank">Wikipedia: Temperature scaling</a><br><a href="https://platform.openai.com/docs/api-reference/chat/create#chat-create-temperature" target="_blank">OpenAI docs: temperature</a></span></span></label>
+            <input id="temperature" type="range" min="0" max="2" step="0.1" value="0" />
+          </div>
+          <div>
+            <label for="maxTokens">Max output tokens <span class="info-wrap"><span class="info-icon">&#9432;</span><span class="info-tip tip-right">Maximum number of tokens the model will generate before stopping. One token is roughly ¾ of a word in English. The model may stop earlier if it produces an end-of-sequence token or hits a stop sequence.<br><br><a href="https://platform.openai.com/docs/api-reference/chat/create#chat-create-max_tokens" target="_blank">OpenAI docs: max_tokens</a></span></span></label>
+            <select id="maxTokens"><option>30</option><option selected>60</option><option>100</option><option>200</option><option>500</option></select>
+          </div>
+          <div>
+            <label for="topP">Top-P: <span id="topPValue">1.0</span> <span class="info-wrap"><span class="info-icon">&#9432;</span><span class="info-tip">Also called nucleus sampling. Instead of considering all tokens, only consider the smallest set whose cumulative probability exceeds P. At 1.0, all tokens are considered. At 0.1, only tokens in the top 10% of cumulative probability mass. Usually use temperature OR top-p, not both.<br><br><a href="https://en.wikipedia.org/wiki/Top-p_sampling" target="_blank">Wikipedia: Top-p sampling</a><br><a href="https://arxiv.org/abs/1904.09751" target="_blank">Paper: The Curious Case of Neural Text Degeneration</a><br><a href="https://platform.openai.com/docs/api-reference/chat/create#chat-create-top_p" target="_blank">OpenAI docs: top_p</a></span></span></label>
+            <input id="topP" type="range" min="0" max="1" step="0.05" value="1.0" />
+          </div>
+          <div>
+            <label for="repeatPenalty">Repeat penalty: <span id="repeatPenaltyValue">1.0</span> <span class="info-wrap"><span class="info-icon">&#9432;</span><span class="info-tip">Penalizes tokens that have already appeared in the output. At 1.0 there is no penalty. Higher values (e.g. 1.1–1.5) make the model less likely to repeat itself. Too high and the output becomes incoherent as the model avoids common words.<br><br><a href="https://arxiv.org/abs/1909.05858" target="_blank">Paper: CTRL — Repetition penalty</a><br><a href="https://docs.ollama.com/api/generate#parameters" target="_blank">Ollama docs: repeat_penalty</a></span></span></label>
+            <input id="repeatPenalty" type="range" min="1" max="2" step="0.05" value="1.0" />
+          </div>
+          <div>
+            <label for="seed">Seed <span class="info-wrap"><span class="info-icon">&#9432;</span><span class="info-tip">A fixed seed makes sampling deterministic — the same prompt with the same seed and temperature should produce the same output. Useful for reproducing results or comparing the effect of changing a single parameter. Leave blank for random sampling each time.<br><br><a href="https://platform.openai.com/docs/api-reference/chat/create#chat-create-seed" target="_blank">OpenAI docs: seed</a></span></span></label>
+            <input type="number" id="seed" placeholder="blank = random" min="0" step="1" />
+          </div>
+          <div style="grid-column: 1 / -1;">
+            <label for="stopSeqs">Stop sequences <span class="info-wrap"><span class="info-icon">&#9432;</span><span class="info-tip">Comma-separated strings that tell the model to stop generating. When the model produces any of these strings, generation halts immediately. Supports \n (newline) and \t (tab). Example: setting "." as a stop sequence produces only the first sentence.<br><br><a href="https://platform.openai.com/docs/api-reference/chat/create#chat-create-stop" target="_blank">OpenAI docs: stop</a></span></span></label>
+            <input type="text" id="stopSeqs" placeholder='e.g. \n, ##, END' />
+          </div>
+        </div>
+        </div><!-- end controlsBody -->
+      </div>
+
+      <!-- Prompt — always visible, takes up screen space -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <label for="prompt" style="margin:0;font-size:16px;font-weight:600;">Prompt</label>
+          <div style="display:flex;gap:6px;">
+            <button type="button" id="copyPromptBtn" class="btn-secondary" style="padding:4px 10px;font-size:12px;" title="Copy prompt to clipboard">Copy</button>
+            <button type="button" id="clearPromptBtn" class="btn-secondary" style="padding:4px 10px;font-size:12px;" title="Clear prompt">Clear</button>
+          </div>
+        </div>
+        <textarea id="prompt" style="min-height:120px;">Once upon a</textarea>
+
+        <div style="margin-top: 10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <button id="predictBtn" style="min-width:220px;">Generate + Inspect Tokens</button>
+          <button id="continueBtn" class="btn-success" title="Append response to prompt and generate again" disabled>Continue from response</button>
+          <button id="firstTokenBtn" class="btn-secondary" title="See what other tokens the model considered first" disabled>First token candidates</button>
+          <button id="inspectBtn" class="btn-secondary" title="View raw request and response JSON" disabled>Request / Response</button>
+        </div>
+      </div>
+
+      <!-- Response — tokens first, prompt context collapsed below -->
+      <div class="card" style="padding:10px 12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <h2 style="margin:0 0 6px 0;font-size:16px;">Response:</h2>
+          <span class="muted" style="font-size:11px;">hover tokens to inspect</span>
+        </div>
+        <div id="responseTokens" class="response-tokens"><span class="muted" style="font-size:13px;">(no response yet)</span></div>
+        <div id="promptDisplay" class="hidden">
+          <div class="prompt-context-toggle" onclick="togglePromptContext()">
+            <span class="prompt-context-arrow collapsed" id="promptContextArrow">&#9660;</span>
+            <span>Prompt context sent to model</span>
+          </div>
+          <div id="promptContextBody" class="collapsible-body collapsed">
+            <hr style="border:none;border-top:1px dashed #cbd5e1;margin:6px 0 4px 0;">
+            <div id="promptText" class="response-prompt"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div id="tooltip" class="tooltip hidden"></div>
+
+    <!-- First-token candidates overlay -->
+    <div id="firstTokenOverlay" class="overlay-backdrop hidden">
+      <div class="overlay-panel" style="max-width:650px;">
+        <div class="overlay-header">
+          <h3>What did the model almost say?</h3>
+          <button class="overlay-close" id="firstTokenClose">&times;</button>
+        </div>
+        <div class="overlay-body" style="padding:16px;">
+          <p class="muted" style="margin-top:0;font-size:13px;">Before the model writes the <strong>very first token</strong> of its response, it scores every word-piece in its vocabulary and ranks them by confidence. A high probability on one token means the model was confident; similar probabilities across several means it was torn between options.</p>
+          <div id="firstTokenInsight" class="muted" style="margin-bottom:10px;font-size:13px;"></div>
+          <table style="color:#e2e8f0;">
+            <thead><tr>
+              <th>Candidate token</th>
+              <th>Confidence</th>
+              <th style="color:#94a3b8;font-size:12px;">LogProb <span class="info-wrap"><span class="info-icon">&#9432;</span><span class="info-tip tip-left">LogProb = ln(probability). A value of 0 means 100% confidence. More negative = less likely.<br><br>Examples: −0.10 ≈ 90%, −1.0 ≈ 37%, −3.0 ≈ 5%<br>Convert: probability = e^logprob<br><br><a href="https://en.wikipedia.org/wiki/Log_probability" target="_blank">Wikipedia: Log probability</a></span></span></th>
+            </tr></thead>
+            <tbody id="firstTokenBody"></tbody>
+          </table>
+          <h3 style="margin-top:16px;color:#e2e8f0;">How confident was the model?</h3>
+          <p class="muted" style="font-size:13px;margin-bottom:8px;">Each bar shows how much of the model's confidence went to that candidate. A single long bar means near-certainty. Multiple similar bars mean the model sees several plausible next words.</p>
+          <div id="bars"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Request/Response inspector overlay -->
+    <div id="inspectOverlay" class="overlay-backdrop hidden">
+      <div class="overlay-panel">
+        <div class="overlay-header">
+          <h3>Request / Response Inspector</h3>
+          <button class="overlay-close" id="inspectClose">&times;</button>
+        </div>
+        <div class="overlay-tabs">
+          <button class="overlay-tab active" data-pane="request">Request Sent</button>
+          <button class="overlay-tab" data-pane="response">Response Received</button>
+        </div>
+        <div class="overlay-body">
+          <pre id="inspectContent"></pre>
+        </div>
+        <div class="overlay-footer">
+          <button id="inspectCurlBtn" class="btn-secondary" style="display:none;">Copy as curl</button>
+          <button id="inspectCopyBtn" class="btn-secondary">Copy JSON</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // --- Collapsible section helpers ---
+      function toggleCollapse(sectionId) {
+        const body = document.getElementById(sectionId + 'Body');
+        const toggle = document.getElementById(sectionId + 'Toggle');
+        body.classList.toggle('collapsed');
+        toggle.classList.toggle('collapsed');
+      }
+      function togglePromptContext() {
+        const body = document.getElementById('promptContextBody');
+        const arrow = document.getElementById('promptContextArrow');
+        body.classList.toggle('collapsed');
+        arrow.classList.toggle('collapsed');
+      }
+
+      const temperature = document.getElementById('temperature');
+      const temperatureValue = document.getElementById('temperatureValue');
+      const topP = document.getElementById('topP');
+      const topPValue = document.getElementById('topPValue');
+      const repeatPenalty = document.getElementById('repeatPenalty');
+      const repeatPenaltyValue = document.getElementById('repeatPenaltyValue');
+      const seedInput = document.getElementById('seed');
+      const stopSeqsInput = document.getElementById('stopSeqs');
+      const predictBtn = document.getElementById('predictBtn');
+      const continueBtn = document.getElementById('continueBtn');
+      const inspectBtn = document.getElementById('inspectBtn');
+      const firstTokenBtn = document.getElementById('firstTokenBtn');
+      const firstTokenOverlay = document.getElementById('firstTokenOverlay');
+      const firstTokenClose = document.getElementById('firstTokenClose');
+      const copyPromptBtn = document.getElementById('copyPromptBtn');
+      const clearPromptBtn = document.getElementById('clearPromptBtn');
+      const inspectOverlay = document.getElementById('inspectOverlay');
+      const inspectContent = document.getElementById('inspectContent');
+      const inspectClose = document.getElementById('inspectClose');
+      const inspectCopyBtn = document.getElementById('inspectCopyBtn');
+      const inspectCurlBtn = document.getElementById('inspectCurlBtn');
+      const responseTokens = document.getElementById('responseTokens');
+      const firstTokenBody = document.getElementById('firstTokenBody');
+      const bars = document.getElementById('bars');
+      const tooltip = document.getElementById('tooltip');
+      const baseUrlInput = document.getElementById('baseUrl');
+      const apiKeyInput = document.getElementById('apiKey');
+      const modelInput = document.getElementById('model');
+
+      const refreshModelsBtn = document.getElementById('refreshModelsBtn');
+      const unloadModelBtn = document.getElementById('unloadModelBtn');
+      const modelDropdown = document.getElementById('modelDropdown');
+
+      let lastResponseText = '';
+      let lastRequestPayload = null;  // raw JSON sent to server
+      let lastResponseData = null;    // raw JSON received from server
+      let inspectActivePane = 'request';
+      let conversationMessages = [];  // multi-turn messages for Continue flow
+
+      // --- Model discovery state (in-memory only) ---
+      let availableModels = []; // [{id, provider, parameter_size, quantization, size_display, logprobs_supported}]
+      let supportedModelsData = null; // cached supported.json data
+      let highlightedIndex = -1;
+
+      // --- Provider tab logic ---
+      let currentProvider = 'lmstudio';
+
+      const providerDefaults = {
+        lmstudio: {
+          baseUrl: 'http://localhost:1234/v1',
+          baseUrlHint: 'Default LM Studio endpoint',
+          apiKeyHint: 'Not required for local servers',
+          apiKeyPlaceholder: 'not needed for local',
+          model: '',
+          modelHint: 'Leave blank to use whatever is loaded in LM Studio',
+        },
+        ollama: {
+          baseUrl: 'http://localhost:11434/v1',
+          baseUrlHint: 'Default Ollama endpoint',
+          apiKeyHint: 'Not required for Ollama',
+          apiKeyPlaceholder: 'not needed for local',
+          model: 'llama3',
+          modelHint: 'e.g. llama3, qwen2, gemma2 — must be pulled first',
+        },
+        openai: {
+          baseUrl: 'https://api.openai.com/v1',
+          baseUrlHint: 'OpenAI API endpoint',
+          apiKeyHint: '',
+          apiKeyPlaceholder: 'sk-...',
+          model: 'gpt-4.1-mini',
+          modelHint: 'gpt-4.1-mini, gpt-4.1, gpt-4o-mini',
+        },
+      };
+
+      document.querySelectorAll('.provider-tab').forEach((tab) => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.provider-tab').forEach((t) => t.classList.remove('active'));
+          tab.classList.add('active');
+          currentProvider = tab.dataset.provider;
+          applyProviderDefaults(currentProvider);
+        });
+      });
+
+      function updateProviderSummary() {
+        const names = { lmstudio: 'LM Studio', ollama: 'Ollama', openai: 'OpenAI' };
+        const model = modelInput.value.trim();
+        const summary = '— ' + (names[currentProvider] || currentProvider) + (model ? ' / ' + model : '');
+        document.getElementById('providerSummary').textContent = summary;
+      }
+
+      function applyProviderDefaults(provider) {
+        const d = providerDefaults[provider];
+        baseUrlInput.value = d.baseUrl;
+        document.getElementById('baseUrlHint').textContent = d.baseUrlHint;
+        document.getElementById('apiKeyHint').textContent = d.apiKeyHint;
+        apiKeyInput.placeholder = d.apiKeyPlaceholder;
+        apiKeyInput.value = '';
+        modelInput.value = d.model;
+        document.getElementById('modelHint').textContent = d.modelHint;
+        updateProviderSummary();
+
+        // Reset model list when switching providers
+        availableModels = [];
+        modelDropdown.classList.add('hidden');
+
+        // Show/hide local-only buttons
+        const isLocal = provider !== 'openai';
+        refreshModelsBtn.style.display = isLocal ? '' : 'none';
+        unloadModelBtn.style.display = isLocal ? '' : 'none';
+
+        if (provider === 'openai') {
+          // Check if env key is available
+          fetch('/api/has-env-key').then(r => r.json()).then(data => {
+            if (data.hasKey) {
+              document.getElementById('apiKeyHint').textContent = 'Environment key detected — leave blank to use it';
+            } else {
+              document.getElementById('apiKeyHint').textContent = 'Paste your OpenAI API key (not stored anywhere)';
+            }
+          }).catch(() => {});
+        }
+      }
+
+      // --- Helpers ---
+      function asPercent(prob) {
+        if (typeof prob !== 'number' || Number.isNaN(prob)) return '-';
+        return (prob * 100).toFixed(2) + '%';
+      }
+
+      function displayToken(token) {
+        if (token === ' ') return '␠';
+        if (token === '\n') return '↵';
+        if (token === '\t') return '⇥';
+        return token;
+      }
+
+      function colorForProbability(prob) {
+        if (typeof prob !== 'number') return 'rgba(148,163,184,0.2)';
+        const p = Math.max(0, Math.min(1, prob));
+        // Green (high) → Yellow → Orange → Red (low)
+        let r, g, b;
+        if (p > 0.75) {
+          // green to yellow-green
+          const t = (p - 0.75) / 0.25;
+          r = Math.round(120 - t * 80);
+          g = Math.round(180 + t * 40);
+          b = Math.round(80 - t * 40);
+        } else if (p > 0.5) {
+          // yellow-green to yellow
+          const t = (p - 0.5) / 0.25;
+          r = Math.round(200 - t * 80);
+          g = Math.round(170 + t * 10);
+          b = Math.round(40 + t * 40);
+        } else if (p > 0.25) {
+          // orange to yellow
+          const t = (p - 0.25) / 0.25;
+          r = Math.round(230 - t * 30);
+          g = Math.round(120 + t * 50);
+          b = 40;
+        } else {
+          // red to orange
+          const t = p / 0.25;
+          r = Math.round(210 + t * 20);
+          g = Math.round(50 + t * 70);
+          b = Math.round(50 - t * 10);
+        }
+        const alpha = 0.3 + (1 - p) * 0.35;
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      }
+
+      function showTooltip(tokenInfo, event) {
+        const rows = (tokenInfo.top_alternatives || []).slice(0, 8).map((alt) => `
+          <tr>
+            <td>${displayToken(alt.token)}</td>
+            <td>${asPercent(alt.probability)}</td>
+            <td>${typeof alt.logprob === 'number' ? alt.logprob.toFixed(3) : '-'}</td>
+          </tr>
+        `).join('');
+
+        tooltip.innerHTML = `
+          <strong>Chosen token:</strong> ${displayToken(tokenInfo.token)}<br/>
+          <strong>P(chosen):</strong> ${asPercent(tokenInfo.probability)}
+          <table>
+            <thead><tr><th>Alt Token</th><th>Prob</th><th>LogProb</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="3">No alternatives</td></tr>'}</tbody>
+          </table>
+        `;
+        tooltip.classList.remove('hidden');
+        tooltip.style.left = `${event.clientX + 14}px`;
+        // Position above the pointer; measure tooltip height first
+        const tipHeight = tooltip.offsetHeight || 120;
+        const above = event.clientY - tipHeight - 10;
+        tooltip.style.top = `${above > 0 ? above : event.clientY + 14}px`;
+      }
+
+      function hideTooltip() {
+        tooltip.classList.add('hidden');
+      }
+
+      function renderResponseTokens(tokens, promptText) {
+        const promptDisplay = document.getElementById('promptDisplay');
+        const promptTextEl = document.getElementById('promptText');
+        responseTokens.innerHTML = '';
+
+        if (!tokens || tokens.length === 0) {
+          responseTokens.textContent = '(no tokens returned)';
+          promptDisplay.classList.add('hidden');
+          return;
+        }
+
+        // Show prompt context below the response tokens (collapsed by default)
+        if (promptText) {
+          promptTextEl.textContent = promptText;
+          promptDisplay.classList.remove('hidden');
+          // Reset to collapsed state each time
+          document.getElementById('promptContextBody').classList.add('collapsed');
+          document.getElementById('promptContextArrow').classList.add('collapsed');
+        } else {
+          promptDisplay.classList.add('hidden');
+        }
+
+        tokens.forEach((tokenInfo) => {
+          const span = document.createElement('span');
+          span.className = 'token';
+          span.textContent = tokenInfo.token;
+          span.style.backgroundColor = colorForProbability(tokenInfo.probability);
+
+          span.addEventListener('mouseenter', (event) => showTooltip(tokenInfo, event));
+          span.addEventListener('mousemove', (event) => showTooltip(tokenInfo, event));
+          span.addEventListener('mouseleave', hideTooltip);
+
+          if (/^\s+$/.test(tokenInfo.token)) {
+            span.title = `Whitespace token: ${JSON.stringify(tokenInfo.token)}`;
+          }
+
+          responseTokens.appendChild(span);
+        });
+      }
+
+      function renderFirstTokenSummary(tokens) {
+        firstTokenBody.innerHTML = '';
+        bars.innerHTML = '';
+        const insight = document.getElementById('firstTokenInsight');
+        insight.innerHTML = '';
+
+        const first = tokens?.[0];
+        if (!first) return;
+
+        const alts = first.top_alternatives || [];
+        if (alts.length === 0) return;
+
+        // Generate a plain-English insight about the first token
+        const chosen = alts[0];
+        const chosenPct = (chosen?.probability || 0) * 100;
+        const runner = alts.length > 1 ? alts[1] : null;
+        const runnerPct = (runner?.probability || 0) * 100;
+
+        let insightText = '';
+        if (chosenPct > 90) {
+          insightText = `The model was <strong>very confident</strong> — it gave <strong>"${displayToken(chosen.token)}"</strong> a ${chosenPct.toFixed(1)}% chance. There was almost no hesitation.`;
+        } else if (chosenPct > 60) {
+          insightText = `The model was <strong>fairly confident</strong> in <strong>"${displayToken(chosen.token)}"</strong> (${chosenPct.toFixed(1)}%)`;
+          if (runner) insightText += `, but also considered <strong>"${displayToken(runner.token)}"</strong> (${runnerPct.toFixed(1)}%).`;
+          else insightText += '.';
+        } else if (chosenPct > 30) {
+          insightText = `The model was <strong>uncertain</strong> — <strong>"${displayToken(chosen.token)}"</strong> only had a ${chosenPct.toFixed(1)}% chance.`;
+          if (runner) insightText += ` <strong>"${displayToken(runner.token)}"</strong> was close behind at ${runnerPct.toFixed(1)}%. A small change in temperature could flip the choice.`;
+        } else {
+          insightText = `The model was <strong>very uncertain</strong> — it spread its confidence thinly across many options. <strong>"${displayToken(chosen.token)}"</strong> won with just ${chosenPct.toFixed(1)}%. This is where randomness and temperature matter most.`;
+        }
+        insight.innerHTML = insightText;
+
+        alts.forEach((candidate, i) => {
+          const pct = asPercent(candidate.probability);
+          const isChosen = i === 0;
+          const tr = document.createElement('tr');
+          if (isChosen) tr.style.fontWeight = 'bold';
+          tr.innerHTML = `
+            <td>${displayToken(candidate.token)}${isChosen ? ' <span style="font-size:10px;color:#16a34a;">&#10004; chosen</span>' : ''}</td>
+            <td>${pct}</td>
+            <td style="color:#94a3b8;font-size:12px;">${typeof candidate.logprob === 'number' ? candidate.logprob.toFixed(4) : '-'}</td>
+          `;
+          firstTokenBody.appendChild(tr);
+
+          const barPct = Math.max(0, Math.min(100, (candidate.probability || 0) * 100));
+          const row = document.createElement('div');
+          row.style.margin = '7px 0';
+          row.innerHTML = `
+            <div style="display:flex;justify-content:space-between;font-size:13px;">
+              <span>${isChosen ? '<strong>' : ''}${displayToken(candidate.token)}${isChosen ? '</strong>' : ''}</span>
+              <span>${pct}</span>
+            </div>
+            <div class="bar-track"><div class="bar-fill" style="width:${barPct}%;background:${isChosen ? 'linear-gradient(90deg, #16a34a, #22d3ee)' : 'linear-gradient(90deg, #2563eb, #0ea5e9)'};"></div></div>
+          `;
+          bars.appendChild(row);
+        });
+      }
+
+      // --- Model discovery ---
+
+      // Fetch supported.json scan data on startup
+      async function loadSupportedModelsData() {
+        try {
+          const res = await fetch('/api/supported-models');
+          const data = await res.json();
+          if (data.available) {
+            supportedModelsData = data;
+          }
+        } catch {
+          // not available, that's fine
+        }
+      }
+
+      // Look up a model in the supported.json scan results
+      function getScanResult(modelId, provider) {
+        if (!supportedModelsData) return null;
+        const all = [...(supportedModelsData.supported || []), ...(supportedModelsData.unsupported || [])];
+        return all.find((m) => m.id === modelId && m.provider === provider) || null;
+      }
+
+      // Merge live model list with scan data for richer display
+      function enrichModels(liveModels, provider) {
+        return liveModels.map((m) => {
+          const scan = getScanResult(m.id, provider);
+          return {
+            id: m.id,
+            provider,
+            parameter_size: m.parameter_size || scan?.parameter_size || '',
+            quantization: m.quantization || scan?.quantization || '',
+            size_display: m.size_display || scan?.size_display || '',
+            family: m.family || scan?.family || '',
+            format: m.format || scan?.format || '',
+            logprobs_supported: scan ? scan.logprobs_supported : null, // null = unknown
+          };
+        });
+      }
+
+      async function fetchModels() {
+        refreshModelsBtn.disabled = true;
+        refreshModelsBtn.textContent = 'Loading...';
+        try {
+          const payload = {
+            provider: {
+              provider: currentProvider,
+              baseUrl: baseUrlInput.value.trim() || undefined,
+              apiKey: apiKeyInput.value.trim() || undefined,
+            },
+          };
+          const res = await fetch('/api/models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to fetch models');
+          const liveModels = data.models || [];
+          availableModels = enrichModels(liveModels, currentProvider);
+
+          // Sort: supported first, then unknown, then unsupported
+          availableModels.sort((a, b) => {
+            const rank = (m) => m.logprobs_supported === true ? 0 : m.logprobs_supported === null ? 1 : 2;
+            return rank(a) - rank(b) || a.id.localeCompare(b.id);
+          });
+
+          renderModelDropdown(modelInput.value);
+          modelDropdown.classList.remove('hidden');
+        } catch (err) {
+          availableModels = [];
+          modelDropdown.innerHTML = `<div class="model-no-results">Error: ${err.message}</div>`;
+          modelDropdown.classList.remove('hidden');
+        } finally {
+          refreshModelsBtn.disabled = false;
+          refreshModelsBtn.textContent = 'Refresh Models';
+        }
+      }
+
+      function renderModelDropdown(filter) {
+        const q = (filter || '').toLowerCase();
+        const filtered = q
+          ? availableModels.filter((m) =>
+              m.id.toLowerCase().includes(q) ||
+              m.parameter_size.toLowerCase().includes(q) ||
+              m.family.toLowerCase().includes(q))
+          : availableModels;
+
+        highlightedIndex = -1;
+
+        if (filtered.length === 0 && availableModels.length > 0) {
+          modelDropdown.innerHTML = '<div class="model-no-results">No matching models</div>';
+          return;
+        }
+        if (filtered.length === 0) {
+          modelDropdown.innerHTML = '<div class="model-no-results">No models loaded — click Refresh Models</div>';
+          return;
+        }
+
+        modelDropdown.innerHTML = filtered
+          .map((m, i) => {
+            const metaParts = [m.parameter_size, m.quantization, m.size_display].filter(Boolean);
+            const metaStr = metaParts.length > 0 ? metaParts.join(' · ') : '';
+            let badge = '';
+            if (m.logprobs_supported === true) badge = '<span class="badge-supported">logprobs</span>';
+            else if (m.logprobs_supported === false) badge = '<span class="badge-unsupported">no logprobs</span>';
+            else badge = '<span class="badge-unknown">unscanned</span>';
+
+            return `<div class="model-option" data-index="${i}" data-id="${m.id}">
+              <span>${m.id}</span>
+              <span class="model-meta">${metaStr} ${badge}</span>
+            </div>`;
+          })
+          .join('');
+
+        modelDropdown.querySelectorAll('.model-option').forEach((opt) => {
+          opt.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            modelInput.value = opt.dataset.id;
+            modelDropdown.classList.add('hidden');
+            updateProviderSummary();
+          });
+        });
+      }
+
+      modelInput.addEventListener('input', () => {
+        updateProviderSummary();
+        if (availableModels.length > 0) {
+          renderModelDropdown(modelInput.value);
+          modelDropdown.classList.remove('hidden');
+        }
+      });
+
+      modelInput.addEventListener('focus', () => {
+        if (availableModels.length > 0) {
+          renderModelDropdown(modelInput.value);
+          modelDropdown.classList.remove('hidden');
+        }
+      });
+
+      modelInput.addEventListener('blur', () => {
+        // Delay hide so mousedown on option fires first
+        setTimeout(() => modelDropdown.classList.add('hidden'), 150);
+      });
+
+      modelInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const options = modelDropdown.querySelectorAll('.model-option');
+          // If dropdown is open and an option is highlighted, select it
+          if (!modelDropdown.classList.contains('hidden') && highlightedIndex >= 0 && options[highlightedIndex]) {
+            modelInput.value = options[highlightedIndex].dataset.id;
+            modelDropdown.classList.add('hidden');
+            updateProviderSummary();
+          } else {
+            // Dropdown is closed or nothing highlighted — fetch models if needed, then show filtered
+            if (availableModels.length === 0) {
+              fetchModels().then(() => {
+                renderModelDropdown(modelInput.value);
+                modelDropdown.classList.remove('hidden');
+              });
+            } else {
+              renderModelDropdown(modelInput.value);
+              modelDropdown.classList.remove('hidden');
+            }
+          }
+          return;
+        }
+
+        if (e.key === 'Escape') {
+          modelDropdown.classList.add('hidden');
+          return;
+        }
+
+        const options = modelDropdown.querySelectorAll('.model-option');
+        if (options.length === 0 || modelDropdown.classList.contains('hidden')) return;
+
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          highlightedIndex = Math.min(highlightedIndex + 1, options.length - 1);
+          options.forEach((o, i) => o.classList.toggle('highlighted', i === highlightedIndex));
+          options[highlightedIndex]?.scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          highlightedIndex = Math.max(highlightedIndex - 1, 0);
+          options.forEach((o, i) => o.classList.toggle('highlighted', i === highlightedIndex));
+          options[highlightedIndex]?.scrollIntoView({ block: 'nearest' });
+        }
+      });
+
+      refreshModelsBtn.addEventListener('click', fetchModels);
+
+      // --- Model unloading ---
+      async function unloadModel() {
+        const model = modelInput.value.trim();
+        if (!model) {
+          alert('Enter a model name to unload.');
+          return;
+        }
+        unloadModelBtn.disabled = true;
+        unloadModelBtn.textContent = 'Unloading...';
+        try {
+          const payload = {
+            model,
+            provider: {
+              provider: currentProvider,
+              baseUrl: baseUrlInput.value.trim() || undefined,
+              apiKey: apiKeyInput.value.trim() || undefined,
+            },
+          };
+          const res = await fetch('/api/unload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Unload failed');
+          modelInput.value = '';
+          // Refresh the model list to reflect the change
+          await fetchModels();
+        } catch (err) {
+          alert('Unload error: ' + err.message);
+        } finally {
+          unloadModelBtn.disabled = false;
+          unloadModelBtn.textContent = 'Unload';
+        }
+      }
+
+      unloadModelBtn.addEventListener('click', unloadModel);
+
+      // --- Events ---
+      temperature.addEventListener('input', () => {
+        temperatureValue.textContent = temperature.value;
+      });
+
+      topP.addEventListener('input', () => {
+        topPValue.textContent = topP.value;
+      });
+
+      repeatPenalty.addEventListener('input', () => {
+        repeatPenaltyValue.textContent = repeatPenalty.value;
+      });
+
+      // --- Request/Response inspector overlay ---
+
+      function redactPayload(obj) {
+        // Deep-clone and redact API keys for display/copy
+        const clone = JSON.parse(JSON.stringify(obj));
+        if (clone.provider && clone.provider.apiKey) {
+          clone.provider.apiKey = 'sk-***REDACTED***';
+        }
+        return clone;
+      }
+
+      function buildCurlCommand(payload) {
+        if (!payload) return '';
+        const redacted = redactPayload(payload);
+        const json = JSON.stringify(redacted, null, 2);
+        // Escape single quotes inside the JSON for the shell
+        const escaped = json.replace(/'/g, "'\\''");
+        return `curl -X POST http://localhost:${location.port || 3000}/api/token-walk \\\n  -H 'Content-Type: application/json' \\\n  -d '${escaped}'`;
+      }
+
+      function showInspectPane(pane) {
+        inspectActivePane = pane;
+        inspectOverlay.querySelectorAll('.overlay-tab').forEach(t => {
+          t.classList.toggle('active', t.dataset.pane === pane);
+        });
+        // Show curl button only on request tab
+        inspectCurlBtn.style.display = pane === 'request' ? '' : 'none';
+
+        if (pane === 'request') {
+          inspectContent.textContent = lastRequestPayload
+            ? JSON.stringify(redactPayload(lastRequestPayload), null, 2)
+            : '(no request yet)';
+        } else {
+          inspectContent.textContent = lastResponseData
+            ? JSON.stringify(lastResponseData, null, 2)
+            : '(no response yet)';
+        }
+      }
+
+      inspectBtn.addEventListener('click', () => {
+        showInspectPane(inspectActivePane);
+        inspectOverlay.classList.remove('hidden');
+      });
+
+      inspectClose.addEventListener('click', () => {
+        inspectOverlay.classList.add('hidden');
+      });
+
+      inspectOverlay.addEventListener('click', (e) => {
+        if (e.target === inspectOverlay) inspectOverlay.classList.add('hidden');
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !inspectOverlay.classList.contains('hidden')) {
+          inspectOverlay.classList.add('hidden');
+        }
+      });
+
+      inspectOverlay.querySelectorAll('.overlay-tab').forEach(tab => {
+        tab.addEventListener('click', () => showInspectPane(tab.dataset.pane));
+      });
+
+      inspectCopyBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(inspectContent.textContent).then(() => {
+          inspectCopyBtn.textContent = 'Copied!';
+          setTimeout(() => { inspectCopyBtn.textContent = 'Copy JSON'; }, 1500);
+        }).catch(() => {});
+      });
+
+      inspectCurlBtn.addEventListener('click', () => {
+        const curl = buildCurlCommand(lastRequestPayload);
+        navigator.clipboard.writeText(curl).then(() => {
+          inspectCurlBtn.textContent = 'Copied!';
+          setTimeout(() => { inspectCurlBtn.textContent = 'Copy as curl'; }, 1500);
+        }).catch(() => {});
+      });
+
+      // --- First-token candidates overlay ---
+      firstTokenBtn.addEventListener('click', () => {
+        firstTokenOverlay.classList.remove('hidden');
+      });
+
+      firstTokenClose.addEventListener('click', () => {
+        firstTokenOverlay.classList.add('hidden');
+      });
+
+      firstTokenOverlay.addEventListener('click', (e) => {
+        if (e.target === firstTokenOverlay) firstTokenOverlay.classList.add('hidden');
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !firstTokenOverlay.classList.contains('hidden')) {
+          firstTokenOverlay.classList.add('hidden');
+        }
+      });
+
+      copyPromptBtn.addEventListener('click', () => {
+        const promptEl = document.getElementById('prompt');
+        navigator.clipboard.writeText(promptEl.value).then(() => {
+          copyPromptBtn.textContent = 'Copied!';
+          setTimeout(() => { copyPromptBtn.textContent = 'Copy'; }, 1500);
+        }).catch(() => {
+          promptEl.select();
+          document.execCommand('copy');
+          copyPromptBtn.textContent = 'Copied!';
+          setTimeout(() => { copyPromptBtn.textContent = 'Copy'; }, 1500);
+        });
+      });
+
+      clearPromptBtn.addEventListener('click', () => {
+        document.getElementById('prompt').value = '';
+        lastResponseText = '';
+        continueBtn.disabled = true;
+      });
+
+      function buildPayload(isContinue) {
+        const model = modelInput.value.trim();
+        const promptText = document.getElementById('prompt').value;
+        const payload = {
+          prompt: promptText,
+          model: model || undefined,
+          temperature: Number(temperature.value),
+          top_logprobs: Number(document.getElementById('topLogprobs').value),
+          max_output_tokens: Number(document.getElementById('maxTokens').value),
+          provider: {
+            provider: currentProvider,
+            baseUrl: baseUrlInput.value.trim() || undefined,
+            apiKey: apiKeyInput.value.trim() || undefined,
+          },
+        };
+
+        // If continuing, send structured messages so the model understands
+        // conversation history instead of seeing one giant flat prompt
+        if (isContinue && conversationMessages.length > 0) {
+          payload.messages = conversationMessages;
+        }
+
+        // Optional parameters — only include if set
+        const seedVal = seedInput.value.trim();
+        if (seedVal !== '') payload.seed = parseInt(seedVal, 10);
+
+        const topPVal = Number(topP.value);
+        if (topPVal < 1.0) payload.top_p = topPVal;
+
+        const rpVal = Number(repeatPenalty.value);
+        if (rpVal > 1.0) payload.repeat_penalty = rpVal;
+
+        const stopStr = stopSeqsInput.value.trim();
+        if (stopStr) {
+          payload.stop = stopStr.split(',').map(s => s.trim().replace(/\\n/g, '\n').replace(/\\t/g, '\t')).filter(Boolean);
+        }
+
+        return payload;
+      }
+
+      async function runGeneration(isContinue) {
+        predictBtn.disabled = true;
+        continueBtn.disabled = true;
+        predictBtn.textContent = 'Generating...';
+        hideTooltip();
+
+        try {
+          const payload = buildPayload(isContinue);
+          lastRequestPayload = payload;
+
+          // On a fresh Generate (not Continue), reset conversation history
+          if (!isContinue) {
+            conversationMessages = [
+              { role: 'user', content: document.getElementById('prompt').value }
+            ];
+          }
+
+          const res = await fetch('/api/token-walk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          lastResponseData = data;
+          inspectBtn.disabled = false;
+          if (!res.ok) throw new Error(data.error || 'Request failed');
+
+          // Derive response text directly from token data — this is the
+          // source of truth for exact formatting (newlines, spaces, special chars).
+          const tokens = data.tokens || [];
+          lastResponseText = tokens.map(t => t.token).join('');
+
+          renderResponseTokens(tokens, data.prompt || '');
+          renderFirstTokenSummary(tokens);
+
+          // Enable continue and first-token buttons if we got a response
+          continueBtn.disabled = !lastResponseText;
+          firstTokenBtn.disabled = !lastResponseText;
+        } catch (error) {
+          alert('Error: ' + error.message);
+        } finally {
+          predictBtn.disabled = false;
+          predictBtn.textContent = 'Generate + Inspect Tokens';
+        }
+      }
+
+      predictBtn.addEventListener('click', () => runGeneration());
+
+      continueBtn.addEventListener('click', () => {
+        if (!lastResponseText) return;
+        // Add the assistant response to conversation history
+        conversationMessages.push({ role: 'assistant', content: lastResponseText });
+        // Add a user message to prompt the model to continue
+        conversationMessages.push({ role: 'user', content: 'Continue.' });
+
+        // Update the textarea to show the accumulated text for display/copy
+        const promptEl = document.getElementById('prompt');
+        const currentPrompt = promptEl.value;
+        const needsSeparator = currentPrompt.length > 0
+          && !/\s$/.test(currentPrompt)
+          && !/^\s/.test(lastResponseText);
+        promptEl.value = currentPrompt + (needsSeparator ? '\n' : '') + lastResponseText;
+        promptEl.scrollTop = promptEl.scrollHeight;
+
+        lastResponseText = '';
+        continueBtn.disabled = true;
+        // Generate using multi-turn messages
+        runGeneration(true);
+      });
+
+      // Initialize — load scan data and apply defaults
+      loadSupportedModelsData();
+      applyProviderDefaults('lmstudio');
+    </script>
+  </body>
+</html>

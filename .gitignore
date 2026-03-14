@@ -1,0 +1,6 @@
+node_modules/
+supported.json
+scan-history.json
+scan.out
+CLAUDE.md
+.DS_Store

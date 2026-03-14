@@ -1,0 +1,28 @@
+{
+  "name": "next-token-explorer",
+  "version": "1.0.0",
+  "description": "Interactive teaching app to explore next-token prediction with OpenAI logprobs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "scan": "node scan-models.js",
+    "scan:ollama": "node scan-models.js --ollama",
+    "scan:lmstudio": "node scan-models.js --lmstudio",
+    "scan:rescan": "node scan-models.js --rescan"
+  },
+  "keywords": [
+    "openai",
+    "llm",
+    "tokens",
+    "education",
+    "express"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "openai": "^4.86.1"
+  }
+}
